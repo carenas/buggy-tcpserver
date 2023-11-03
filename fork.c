@@ -26,6 +26,13 @@ static void regress_sighandler(int signo)
 	raise(signo);
 }
 
+static const char *lf(unsigned length) {
+	const char *line_end[] = { "", "\n", "\r\n" };
+
+	assert(length <= 2);
+	return line_end[length];
+}
+
 static int handle_connection(int pid, int client_socket, int client_id)
 {
 	int r;
@@ -35,7 +42,7 @@ static int handle_connection(int pid, int client_socket, int client_id)
 
 	printf("%d: connect %d\n", pid, client_id);
 	do {
-		int keep_lf = 0; /* SMELL: only supported by a few commands */
+		unsigned keep_lf = 0; /* SMELL: missing command support */
 		ssize_t n = read(client_socket, buffer, 8);
 
 		if (debug)
@@ -85,9 +92,9 @@ static int handle_connection(int pid, int client_socket, int client_id)
 			/* SMELL: could break with partial data requests */
 			assert(n > 2);
 			if (buffer[n - 2] == '\r')
-				keep_lf = 2;
+				keep_lf = 2u;
 			else if (buffer[n - 1] == '\n')
-				keep_lf = 1;
+				keep_lf = 1u;
 			else
 				keep_lf = 0;
 			buffer[n - keep_lf] = '\0';
@@ -188,7 +195,8 @@ static int handle_connection(int pid, int client_socket, int client_id)
 				close(ipc[0]);
 
 				printf("%d: start\n", (int)my_pid);
-				s = sprintf(buffer, "%d\n", my_pid);
+				s = sprintf(buffer, "%d%s",
+					(int)my_pid, lf(keep_lf));
 				if (s < 0) {
 					printf("%d: sprintf %s\n",
 						(int)my_pid, strerror(errno));
