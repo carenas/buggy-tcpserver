@@ -158,7 +158,15 @@ static int handle_connection(int pid, int client_socket, int client_id)
 				parent */
 			int ipc[2];
 			pid_t child_pid;
+			unsigned busy = 0;
 
+			/* BUG: could be abused by client, unsafe */
+			if (n > 4) {
+				int i = atoi(buffer + 4);
+				busy = (i < 0) ? 0 : (unsigned)i;
+			}
+
+			/* BUG: no report to peer on failure */
 			if (pipe(ipc) < 0) {
 				printf("%d: pipe! %s\n", pid, strerror(errno));
 				errno = 0;
@@ -167,7 +175,6 @@ static int handle_connection(int pid, int client_socket, int client_id)
 
 			child_pid = fork();
 			if ((int)child_pid == -1) {
-				/* BUG: no report to peer on failure */
 				printf("%d: fork! %s\n", pid, strerror(errno));
 				errno = 0;
 				continue;
@@ -189,6 +196,7 @@ static int handle_connection(int pid, int client_socket, int client_id)
 					s = 0;
 				}
 
+				sleep(busy);
 				n = write(client_socket, buffer, (size_t)s);
 				t = (n != s);
 
