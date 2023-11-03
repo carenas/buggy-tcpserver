@@ -2,16 +2,15 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/wait.h>
 #include <netinet/in.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <limits.h>
 #include <errno.h>
-#include <getopt.h>
+#include <getopt.h> /* SMELL: could avoid getopt_long not portability */
+#include <signal.h>
 #include <time.h>
-#include <err.h>
 #include <assert.h>
 #include <stdio.h>
 
@@ -22,7 +21,7 @@ static int handle_connection(int pid, int client_socket, int client_id)
 	int r;
 	int client_exit = 0;
 	char buffer[PIPE_BUF]; /* BUG: arbitrary, avoids partial */
-	clock_t start, end;
+	clock_t start = 0, end; /* SMELL: start initalization to calm cc */
 
 	printf("%d: connect %d\n", pid, client_id);
 	do {
@@ -172,9 +171,12 @@ static int handle_connection(int pid, int client_socket, int client_id)
 						strerror(errno));
 
 				if (debug) {
+					int i;
 					end = clock();
-					printf("%d: DEBUG stop %ld\n", (int)my_pid,
-							end - start);
+					assert(start <= end && (end - start) <= INT_MAX);
+					i = (int)(end - start);
+					printf("%d: DEBUG stop %d\n",
+						(int)my_pid, i);
 				}
 				exit(s);
 			} else {
@@ -207,8 +209,8 @@ static int usage(char *process_name)
 	printf("\t-D, --debug\t\tenable debugging messages\n");
 	printf("\t-L, --leak\t\tleak filehandles to workers (0, 0x3)\n");
 	printf("\t-s, --slow\t\tadditional slowdown by <seconds> (0)\n");
-	printf("\t-m, --max-workers\t\thow many fast workers allowed (3000)\n");
-	printf("\t-h, --help\tthis help\n");
+	printf("\t-m, --max-workers\thow many fast workers allowed (3000)\n");
+	printf("\t-h, --help\t\tthis help\n");
 	return 0;
 }
 
@@ -221,7 +223,7 @@ int main(int argc, char *argv[])
 	struct linger lin;
 	pid_t pid = getpid();
 	unsigned slow_listener = 0;
-	char server_type[8] = { 's', 't', 'a', 'n', 'd', 'a', 'r', '\0' };
+	char server_type[8] = {'s', 'i', 'm', 'p', 'l', 'e', '\0', 0};
 	int max_workers = 3000; /* BUG: incorrectly sized for capacity */
 	int leak = 0;
 
@@ -241,7 +243,7 @@ int main(int argc, char *argv[])
 				debug = 1;
 				break;
 			case 'L':
-				leak = atoi(optarg);
+				leak = optarg ? atoi(optarg) : 0x3;
 				if (!(leak & 0x1) && !(leak & 0x2)) {
 					printf("incorrect value, using default (0x3)\n");
 					leak = 0x3;
@@ -267,26 +269,40 @@ int main(int argc, char *argv[])
 	signal(SIGCHLD, SIG_IGN);
 	signal(SIGPIPE, SIG_IGN);
 
+	/* TODO: support IPv6 */
 	listen_socket = socket(AF_INET, SOCK_STREAM, 0);
-	if (listen_socket < 0)
-		err(1, "socket");
+	if (listen_socket < 0) {
+		printf("FATAL: socket %s\n", strerror(errno));
+		return 1;
+	}
 
 	/* BUG: causes resets in clients, might result in lost data */
 	lin.l_onoff = 1;
 	lin.l_linger = 0;
 	if (setsockopt(listen_socket, SOL_SOCKET, SO_LINGER,
-			(const void *)&lin, sizeof(lin)) < 0)
-		err(1, "setsockopt(SO_LINGER)");
+			(const void *)&lin, sizeof(lin)) < 0) {
+		printf("FATAL: setsockopt(SO_LINGER) %s\n",
+						strerror(errno));
+		return 1;
+	}
 
 	/* BUG: when leaky might even randomly cause problems after restart */
 	if (setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR,
-			(const void *)&lin.l_onoff, sizeof(int)) < 0)
-		err(1, "setsockopt(SO_REUSEADDR)");
+			(const void *)&lin.l_onoff, sizeof(int)) < 0) {
+		printf("FATAL: setsockopt(SO_REUSEADDR) %s\n",
+						strerror(errno));
+		return 1;
+	}
 
+#ifdef SO_REUSEPORT
 	/* BUG: could trigger partial requests from old retransmits */
 	if (setsockopt(listen_socket, SOL_SOCKET, SO_REUSEPORT,
-			(const void *)&lin.l_onoff, sizeof(int)) < 0)
-		err(1, "setsockopt(SO_REUSEPORT)");
+			(const void *)&lin.l_onoff, sizeof(int)) < 0) {
+		printf("FATAL: setsockopt(SO_REUSEPORT) %s\n",
+						strerror(errno));
+		return 1;
+	}
+#endif
 
 	/* BUG: might be atacked by a third party blocking "workers"
 		with slow responses */
@@ -294,12 +310,17 @@ int main(int argc, char *argv[])
 	server_addr.sin_addr.s_addr = INADDR_ANY;
 	server_addr.sin_port = htons(port_number);
 	if (bind(listen_socket,
-		(struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
-			err(1, "bind %hu", port_number);
+		(struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+			printf("FATAL: bind %hu %s\n", port_number,
+						strerror(errno));
+			return 1;
+	}
 
 	/* BUG: too many entries here just increases latency */
-	if (listen(listen_socket, 3000) < 0)
-		err(1, "listen");
+	if (listen(listen_socket, 3000) < 0) {
+		printf("FATAL: listen %s\n", strerror(errno));
+		return 1;
+	}
 
 	printf("%d: start %s (%u,%d)\n", (int)pid, server_type,
 				slow_listener, max_workers);
@@ -317,15 +338,18 @@ int main(int argc, char *argv[])
 			if (leak) {
 				/* we are leakin so maybe there is another
 				   server that can take the listener job */
-				printf("%d: stop %s\n", pid, strerror(errno));
+				printf("%d: stop %s\n", (int)pid, strerror(errno));
 				break;
-			} else
-				err(1, "accept");
+			} else {
+				printf("%d: FATAL: accept %s\n",
+					(int)pid, strerror(errno));
+				return 1;
+			}
 		}
 		num_workers++;
 
 		/* BUG: this is incorrect, but it is a tradeoff for
-			debugabilty, nobody should do this but some
+			debugabilty; nobody should do this but some
 			just mask the issue by using threads
 			which introduce other problems */
 		child_pid = fork();
@@ -344,6 +368,7 @@ int main(int argc, char *argv[])
 
 			r = handle_connection(my_pid, client_socket,
 						ntohs(client_addr.sin_port));
+
 			if (r) {
 				int e = close(client_socket);
 				if (e < 0)
@@ -369,10 +394,10 @@ int main(int argc, char *argv[])
 			/* BUG: nobody checks this status */
 			exit(r);
 		} else if ((int)child_pid == -1) {
-			printf("%d: fork %s\n", pid, strerror(errno));
+			printf("%d: fork %s\n", (int)pid, strerror(errno));
 			if (close(client_socket) < 0)
 				printf("%d: BUG close(%d) %s\n",
-					pid, client_socket, strerror(errno));
+					(int)pid, client_socket, strerror(errno));
 
 			errno = 0;
 			num_workers--;
@@ -385,7 +410,7 @@ int main(int argc, char *argv[])
 				r = close(client_socket);
 				if (r < 0) {
 					printf("%d: BUG close(%d): %d %s\n",
-						pid, client_socket, r,
+						(int)pid, client_socket, r,
 						strerror(errno));
 					errno = 0;
 				}
