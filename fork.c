@@ -173,33 +173,50 @@ static int handle_connection(int pid, int client_socket, int client_id)
 				continue;
 			} else if (!child_pid) {
 				pid_t my_pid = getpid();
-				int s;
+				int s, t;
 
 				if (debug)
 					start = clock();
-				close(ipc[0]);
-				printf("%d: start\n", (int)my_pid);
-				n = write(client_socket, "ok\n", 3);
-				s = (n != 3);
 
-				if (s) {
-					printf("%d: write(3) %s\n",
+				close(ipc[0]);
+
+				printf("%d: start\n", (int)my_pid);
+				s = sprintf(buffer, "%d\n", my_pid);
+				if (s < 0) {
+					printf("%d: sprintf %s\n",
 						(int)my_pid, strerror(errno));
 					errno = 0;
+					s = 0;
 				}
-				if (write(ipc[1], &s, sizeof(s)) <= 0)
+
+				n = write(client_socket, buffer, (size_t)s);
+				t = (n != s);
+
+				if (t) {
+					printf("%d: write(%d) %zd %s\n",
+						(int)my_pid, s, n,
+						strerror(errno));
+					errno = 0;
+				}
+
+				/* BUG: a failure will block the parent */
+				if (write(ipc[1], &t, sizeof(t)) <= 0)
 					printf("%d: pipe %s\n", (int)my_pid,
 						strerror(errno));
 
 				if (debug) {
 					int i;
+					printf("%d: DEBUG: last write %zd\n",
+						(int)my_pid, n);
 					end = clock();
 					assert(start <= end && (end - start) <= INT_MAX);
 					i = (int)(end - start);
 					printf("%d: DEBUG: stop %d\n",
 						(int)my_pid, i);
 				}
-				exit(s);
+
+				/* BUG: this status is lost */
+				exit(t);
 			} else {
 				int status;
 
