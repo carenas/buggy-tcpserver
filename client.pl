@@ -145,6 +145,11 @@ while (<STDIN>) {
         print "INVALID\n" if $shutdown > 2 && $debug;
         next;
     }
+    if (/linge?r\s*(\d+)/a) {
+        my $linger_timeout = $1;
+        $socket->setsockopt(SOL_SOCKET, SO_LINGER, pack("II", 1, $linger_timeout));
+        next;
+    }
     if (/ti?me?out(\s*[\d.]*)?/a) {
         my $v = ltrim($1);
         if ($timeout_available) {
