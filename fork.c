@@ -222,6 +222,7 @@ static int usage(const char *process_name)
 	printf("\n");
 	printf("\t-D, --debug\t\tenable debugging messages\n");
 	printf("\t-L, --leak\t\tleak filehandles to workers (0, 0x3)\n");
+	printf("\t    --linger\t\tnumber of seconds to linger (0)\n");
 	printf("\t-s, --slow\t\tadditional <slowdown> in seconds (0)\n");
 	printf("\t-m, --max-workers\thow many fast workers allowed (3000)\n");
 	printf("\t-h, --help\t\tthis help\n");
@@ -234,7 +235,7 @@ int main(int argc, char *argv[])
 	uint16_t port_number = 7777;
 	struct sockaddr_in client_addr, server_addr = {0};
 	int r;
-	struct linger lin;
+	struct linger lin = {1, 0};
 	pid_t pid = getpid();
 	unsigned slow_listener = 0;
 	char server_type[8] = {'s', 'i', 'm', 'p', 'l', 'e', '\0', 0};
@@ -248,11 +249,15 @@ int main(int argc, char *argv[])
 		{"slow", required_argument, NULL, 's'},
 		{"max-workers", required_argument, NULL, 'm'},
 		{"listen-queue", required_argument, NULL, 'l'},
+		{"linger", required_argument, NULL, 1},
 		{NULL, 0, NULL, 0}
 	};
 
 	while ((r = getopt_long(argc, argv, "DL:l:m:s:", long_options, NULL)) >= 0) {
 		switch(r) {
+			case 1: /* linger */
+				lin.l_linger = atoi(optarg);
+				break;
 			case 'D':
 				debug = 1;
 				break;
@@ -293,14 +298,14 @@ int main(int argc, char *argv[])
 	}
 
 	/* BUG: causes resets in clients, might result in lost data */
-	lin.l_onoff = 1;
-	lin.l_linger = 0;
-	if (setsockopt(listen_socket, SOL_SOCKET, SO_LINGER,
-			(const void *)&lin, sizeof(lin)) < 0) {
+	if (lin.l_linger >= 0 &&
+			setsockopt(listen_socket, SOL_SOCKET, SO_LINGER,
+				(const void *)&lin, sizeof(lin)) < 0) {
 		printf("FATAL: setsockopt(SO_LINGER) %s\n",
 						strerror(errno));
 		return 1;
-	}
+	} else if (debug)
+		printf("DEBUG: SO_LINGER not enabled %d\n", lin.l_linger);
 
 	/* BUG: when leaky might even randomly cause problems after restart */
 	if (setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR,
