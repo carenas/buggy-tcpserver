@@ -2,9 +2,8 @@
 An intentionally buggy server that can be used to mock failure
 scenarios in client/server applications.
 
-[!WARNING]
-Do not use any of this code for real use and instead rely in a properly
-working framework.
+> [!WARNING]
+> Do not use any of this code for real use and instead rely in a properly working framework.
 
 ## Protocol and Design
 
@@ -48,8 +47,9 @@ This code is not meant to be bug free, but hopefully most of the bugs and smells
 are documented. It is also too verbose and repetitive so it can be
 tweaked to match the specific scenario you are observing, and has some
 probably odd defaults and bugs selected as it was born as an attempt to
-replicate problems observed in one specific case[^1], hence also the
-strange focus on making sure all sockets were closed correctly.
+replicate problems observed in one specific
+[case](https://stackoverflow.com/questions/77355636/close-wait-tcp-states-despite-closed-file-descriptors/).
+Hence also the strange focus on making sure all sockets were closed correctly.
 
 It is meant to be modified to fit your use case though, so it was cleaned up
 slightly from the original throwaway version, even if it might still keep some
@@ -65,5 +65,3 @@ troubleshooting.
 
 A server based on the same framework/language than the problematic one will
 be even better.
-
-[^1] https://stackoverflow.com/questions/77355636/close-wait-tcp-states-despite-closed-file-descriptors/
