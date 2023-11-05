@@ -222,7 +222,7 @@ static int usage(const char *process_name)
 	printf("\n");
 	printf("\t-D, --debug\t\tenable debugging messages\n");
 	printf("\t-L, --leak\t\tleak filehandles to workers (0, 0x3)\n");
-	printf("\t-s, --slow\t\\tadditional slowdown in <seconds> (0)\n");
+	printf("\t-s, --slow\t\tadditional <slowdown> in seconds (0)\n");
 	printf("\t-m, --max-workers\thow many fast workers allowed (3000)\n");
 	printf("\t-h, --help\t\tthis help\n");
 	return 0;
