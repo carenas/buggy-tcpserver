@@ -49,7 +49,7 @@ while (my $arg = shift) {
 
         --connect=close|reset        "ping" at connect, end FIN/RST if fail
         --big                        "big" at connect
-        --debug                        enable debugging messages
+        --debug                      enable debugging messages
 
 USAGE
         print "See code for details\n";

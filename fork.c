@@ -8,24 +8,27 @@
 #include <unistd.h>
 #include <limits.h>
 #include <errno.h>
-#include <getopt.h> /* SMELL: could avoid getopt_long not portability */
+#include <getopt.h> /* SMELL: portability could be improved if getopt() */
 #include <signal.h>
 #include <time.h>
 #include <assert.h>
 #include <stdio.h>
 
+/* SMELL: should better use stderr for debug/error messages, but keeping
+	them all together makes reporting easier without timestamps */
+/* TODO: timestamp messages to help correlate events with client */
 static int debug;
 
 static int handle_connection(int pid, int client_socket, int client_id)
 {
 	int r;
 	int client_exit = 0;
-	char buffer[PIPE_BUF]; /* BUG: arbitrary, avoids partial */
-	clock_t start = 0, end; /* SMELL: start initalization to calm cc */
+	char buffer[PIPE_BUF]; /* BUG: arbitrary, but almost avoid partial */
+	clock_t start = 0, end; /* SMELL: initialized to calm compiler */
 
 	printf("%d: connect %d\n", pid, client_id);
 	do {
-		int keep_lf = 0;
+		int keep_lf = 0; /* SMELL: only supported by a few commands */
 		ssize_t n = read(client_socket, buffer, 8);
 
 		if (debug)
@@ -40,7 +43,12 @@ static int handle_connection(int pid, int client_socket, int client_id)
 						pid, client_socket,
 						strerror(errno));
 				printf("%d: pipe? %zd %d %s\n", pid, n, r,
-					strerror(saved_errno));
+							strerror(saved_errno));
+				errno = 0;
+			}
+			if (debug && errno) {
+				printf("%d: DEBUG: read %s\n", pid,
+							strerror(errno));
 				errno = 0;
 			}
 			break;
@@ -48,20 +56,26 @@ static int handle_connection(int pid, int client_socket, int client_id)
 
 		assert(n > 0);
 		if ((n == 8) && !memcmp(buffer, "aaaaaaaa", 8)) {
-			/* BUG: bad handle short read */
+			/* SMELL: should handle short read better */
 			n = read(client_socket, buffer + 8, PIPE_BUF - 8);
-			if (n < 0 || n != PIPE_BUF - 8)
+			if (n != PIPE_BUF - 8)
 				printf("%d: read(%zd) %s\n",
 					pid, n, strerror(errno));
 			if (n < 0) {
 				errno = 0;
 				break;
+			} else if (errno) {
+				if (debug)
+					printf("%d: DEBUG: read %s\n", pid,
+							strerror(errno));
+				errno = 0;
+
 			}
 			keep_lf = 0;
-			/* SMELL: full of garbage, not meant to be printed */
+			/* SMELL: full of garbage, dangerous to print */
 			strcpy(buffer, "big (SYN)");
 		} else {
-			/* BUG: bad handle of partial requests */
+			/* SMELL: could break with partial data requests */
 			assert(n > 2);
 			if (buffer[n - 2] == '\r')
 				keep_lf = 2;
@@ -91,7 +105,7 @@ static int handle_connection(int pid, int client_socket, int client_id)
 					buffer[n - keep_lf] = '\r';
 					break;
 			}
-			/* TODO: should handle partial/short write */
+			/* TODO: should handle better partial/short write */
 			n = write(client_socket, buffer, s);
 			if (n < 0 || n != (ssize_t)s) {
 				printf("%d: write(%zu) pipe? %zd %s\n",
@@ -121,7 +135,7 @@ static int handle_connection(int pid, int client_socket, int client_id)
 
 			sleep((i < 0) ? 0 : (unsigned)i);
 			/* TODO: should handle partial/short write */
-			/* BUG: not handle sprintf error */
+			/* BUG: sprintf error not handled */
 			n = write(client_socket, buffer,
 					(size_t)sprintf(buffer, "%d\n", i));
 			if (n < 0) {
@@ -175,7 +189,7 @@ static int handle_connection(int pid, int client_socket, int client_id)
 					end = clock();
 					assert(start <= end && (end - start) <= INT_MAX);
 					i = (int)(end - start);
-					printf("%d: DEBUG stop %d\n",
+					printf("%d: DEBUG: stop %d\n",
 						(int)my_pid, i);
 				}
 				exit(s);
@@ -196,7 +210,7 @@ static int handle_connection(int pid, int client_socket, int client_id)
 	return !client_exit;
 }
 
-static int usage(char *process_name)
+static int usage(const char *process_name)
 {
 	printf("%s [--debug] <options>\n", process_name);
 	printf("A buggy TCP server meant for mocking common client/server\n");
@@ -208,7 +222,7 @@ static int usage(char *process_name)
 	printf("\n");
 	printf("\t-D, --debug\t\tenable debugging messages\n");
 	printf("\t-L, --leak\t\tleak filehandles to workers (0, 0x3)\n");
-	printf("\t-s, --slow\t\tadditional slowdown by <seconds> (0)\n");
+	printf("\t-s, --slow\t\\tadditional slowdown in <seconds> (0)\n");
 	printf("\t-m, --max-workers\thow many fast workers allowed (3000)\n");
 	printf("\t-h, --help\t\tthis help\n");
 	return 0;
@@ -266,7 +280,9 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	/* BUG: prevents wait() and friends to work (at least in Linux) */
 	signal(SIGCHLD, SIG_IGN);
+	/* BUG: makes detecting broken connections slightly less reliable */
 	signal(SIGPIPE, SIG_IGN);
 
 	/* TODO: support IPv6 */
@@ -336,7 +352,7 @@ int main(int argc, char *argv[])
 			(struct sockaddr *)&client_addr, &client_socket_len);
 		if (client_socket < 0) {
 			if (leak) {
-				/* we are leakin so maybe there is another
+				/* we are leaking so maybe there is another
 				   server that can take the listener job */
 				printf("%d: stop %s\n", (int)pid, strerror(errno));
 				break;
@@ -349,7 +365,7 @@ int main(int argc, char *argv[])
 		num_workers++;
 
 		/* BUG: this is incorrect, but it is a tradeoff for
-			debugabilty; nobody should do this but some
+			debugability; nobody should do this but some
 			just mask the issue by using threads
 			which introduce other problems */
 		child_pid = fork();
@@ -366,6 +382,7 @@ int main(int argc, char *argv[])
 				errno = 0;
 			}
 
+			/* TODOL client_id should support multiple sources */
 			r = handle_connection(my_pid, client_socket,
 						ntohs(client_addr.sin_port));
 
@@ -379,9 +396,12 @@ int main(int argc, char *argv[])
 			}
 			if ((leak & 0x2)) {
 				/* this might even work but is not
-				   recommended and genarally frowned upon
+				   recommended and generally frowned upon
 				   as it causes all sorts of races and
-				   might break epoll() */
+				   might break epoll() in Linux.
+				   in BSD/macOS, kqueue() would specifically
+				   prevent its file handler to be dup() by
+				   fork(), probably for the same reason. */
 				if (close(client_socket) < 0)
 					printf("%d: BUG close(%d): %s\n",
 						my_pid, client_socket,
@@ -404,8 +424,8 @@ int main(int argc, char *argv[])
 		} else {
 			if ((leak & 0x1)) {
 				if (debug)
-					printf("DEBUG: leak client socket %d\n",
-					client_socket);
+					printf("%d: DEBUG: leak client socket %d\n",
+						(int)pid, client_socket);
 			} else {
 				r = close(client_socket);
 				if (r < 0) {
