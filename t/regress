@@ -1,0 +1,18 @@
+#!/bin/sh
+
+# SPDX-License-Identifier: BSD-2-Clause
+
+set -e
+
+start_fork() {
+	../fork "$@" >log &
+	echo $!
+}
+
+PID=$(start_fork -D)
+sleep 1
+kill -INT "$PID"
+sleep 1
+kill "$PID" 2>/dev/null || :
+grep "DEBUG: SO_LINGER not enabled 0" log && exit 1
+rm -f log out err

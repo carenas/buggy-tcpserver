@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: BSD-2-Clause
+.PHONY: check clean
 
 all: fork
 
-.PHONY: clean
+check: fork
+	$(MAKE) -C t
 
 clean:
 	$(RM) fork *.o
