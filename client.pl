@@ -47,7 +47,7 @@ while (my $arg = shift) {
         A perl implementation of a client for the buggy tcp_server
         with optional support for timeouts and other goodies.
 
-        --connect=close|reset        "ping" at connect, end FIN/RST if fail
+        --connect=close|reset        "ping" at connect, send FIN/RST if fail
         --big                        "big" at connect
         --debug                      enable debugging messages
 
@@ -75,14 +75,15 @@ my $n;
 my $id = $socket->sockport();
 
 if ($connect_failure =~ /close|reset/ || defined($big_on_connect)) {
+    my $big = defined($big_on_connect);
     my $fail = 0;
-    if (defined($big_on_connect)) {
+    if ($big) {
         $buffer = 'a' x PIPE_BUF;
     } else {
         $buffer = "ping!";
     }
     $n = $socket->send($buffer);
-    if ($n == 5) {
+    if ($n == 5 && !$big) {
         if ($timeout_available) {
             IO::Socket::Timeout->enable_timeouts_on($socket);
             $socket->read_timeout($timeout_available);
@@ -126,6 +127,7 @@ if ($connect_failure =~ /close|reset/ || defined($big_on_connect)) {
 print "$id: $init"."connect\n";
 
 while (<STDIN>) {
+    my $expect_empty_response;
     my $size = 8;
     $buffer = "";
 
@@ -167,6 +169,7 @@ while (<STDIN>) {
         }
         next;
     }
+    $expect_empty_response = /close/;
     last if $exit || /bye|die/;
 
     # BUG: might need to use sysread and cousins for reliable timeouts
@@ -174,10 +177,11 @@ while (<STDIN>) {
     $socket->shutdown($shutdown) if $shutdown >= 0 && $early_passive && !$short_pipe;
     $socket->recv($buffer, $size); # BUG: timeout might go undetected
     if (!length($buffer)) {
+        print "pipe!\n" if $pipe;
+        last if $expect_empty_response;
         if ($timeout_available && $has_timeout && $socket->timeout_enabled()) {
             print "timeout!\n" unless $pipe;
         }
-        print "pipe!\n" if $pipe;
         last;
     }
     if ($size > 8) {
