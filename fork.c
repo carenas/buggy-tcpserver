@@ -307,12 +307,13 @@ int main(int argc, char *argv[])
 	}
 
 	/* BUG: causes resets in clients, might result in lost data */
-	if (lin.l_linger >= 0 &&
-			setsockopt(listen_socket, SOL_SOCKET, SO_LINGER,
+	if (lin.l_linger >= 0) {
+		if (setsockopt(listen_socket, SOL_SOCKET, SO_LINGER,
 				(const void *)&lin, sizeof(lin)) < 0) {
-		printf("FATAL: setsockopt(SO_LINGER) %s\n",
+			printf("FATAL: setsockopt(SO_LINGER) %s\n",
 						strerror(errno));
-		return 1;
+			return 1;
+		}
 	} else if (debug)
 		printf("DEBUG: SO_LINGER not enabled %d\n", lin.l_linger);
 
