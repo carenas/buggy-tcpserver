@@ -19,6 +19,13 @@
 /* TODO: timestamp messages to help correlate events with client */
 static int debug;
 
+static void regress_sighandler(int signo)
+{
+	signal(signo, SIG_DFL);
+	fflush(stdout);
+	raise(signo);
+}
+
 static int handle_connection(int pid, int client_socket, int client_id)
 {
 	int r;
@@ -289,6 +296,8 @@ int main(int argc, char *argv[])
 	signal(SIGCHLD, SIG_IGN);
 	/* BUG: makes detecting broken connections slightly less reliable */
 	signal(SIGPIPE, SIG_IGN);
+	/* SMELL: only needed for regression testing */
+	signal(SIGINT, regress_sighandler);
 
 	/* TODO: support IPv6 */
 	listen_socket = socket(AF_INET, SOCK_STREAM, 0);
