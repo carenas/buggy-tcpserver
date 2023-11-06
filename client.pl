@@ -22,6 +22,9 @@ sub ltrim {
     return $s;
 }
 
+my $hostname = "127.0.0.1";
+my $port = 7777;
+
 $| = 1;
 
 my $exit = 0;
@@ -37,6 +40,10 @@ my $debug = 0;
 while (my $arg = shift) {
     if ($arg =~ /.*connect.*=(\w+)/) {
         $connect_failure = $1;
+    } elsif ($arg =~ /.*server=([\w.]+)((?<=:)\d+)?/a) {
+        # BUG: no support for IPv6 address
+        $hostname = $1;
+        $port = $2 if defined($2);
     } elsif ($arg =~ /.*big/) {
         $big_on_connect = 1;
     } elsif ($arg =~ /.*debug/) {
@@ -47,9 +54,10 @@ while (my $arg = shift) {
         A perl implementation of a client for the buggy tcp_server
         with optional support for timeouts and other goodies.
 
-        --connect=close|reset        "ping" at connect, send FIN/RST if fail
-        --big                        "big" at connect
-        --debug                      enable debugging messages
+        --server=<host[:port]>    defaults to $hostname:$port
+        --connect=close|reset     "ping" at connect, send FIN/RST if timeout
+        --big                     "big" at connect
+        --debug                   enable debugging messages
 
 USAGE
         print "See code for details\n";
@@ -58,11 +66,11 @@ USAGE
 }
 
 my $socket = new IO::Socket::INET (
-    PeerHost => "127.0.0.1",
-    PeerPort => 7777,
+    PeerHost => $hostname,
+    PeerPort => $port,
     Proto => "tcp",
     Timeout => 5,
-) or die "$IO::Socket::errstr\n";
+) or die "$hostname:$port $@\n";
 
 my $close_on_exit = 1;
 my $early_passive = 0;
