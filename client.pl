@@ -25,9 +25,16 @@ my $timeout_available = eval {
 
 sub ltrim {
     my $s = shift;
-    $s =~ s/^[^\S\n]+//gm unless !defined($s);
+    $s =~ s/^[^\S\n]+//gm;
     $s = undef unless length($s);
     return $s;
+}
+
+sub synopsis_format {
+    foreach (@_) {
+        s/^--/\t--/gm;
+    }
+    return @_;
 }
 
 $| = 1;
@@ -59,7 +66,7 @@ while (my $arg = shift) {
         $debug = 1;
     } elsif ($arg =~ /.*help/) {
         print "$0 <options>\n";
-        print ltrim(<<"USAGE");
+        print synopsis_format(ltrim(<<"SYNOPSIS"));
         A perl implementation of a client for the buggy tcp_server
         with optional support for timeouts and other goodies.
 
@@ -70,7 +77,7 @@ while (my $arg = shift) {
         --big                     "big" at connect
         --debug                   enable debugging messages
 
-USAGE
+SYNOPSIS
         print "See code for details\n";
         exit 0;
     }
