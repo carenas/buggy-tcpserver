@@ -2,6 +2,14 @@
 
 # SPDX-License-Identifier: BSD-2-Clause
 
+my $hostname = "127.0.0.1";
+my $port = 7777;
+my $connect_timeout = 5;
+my $read_timeout = 5;
+my $connect_failure = "none";
+
+# Most variables below are not configuration variables
+
 use strict;
 use warnings;
 
@@ -12,7 +20,7 @@ use IO::Socket::INET;
 my $timeout_available = eval {
     require IO::Socket::Timeout;
     IO::Socket::Timeout->import();
-    5;
+    $read_timeout;
 };
 
 sub ltrim {
@@ -22,9 +30,6 @@ sub ltrim {
     return $s;
 }
 
-my $hostname = "127.0.0.1";
-my $port = 7777;
-
 $| = 1;
 
 my $exit = 0;
@@ -33,13 +38,17 @@ my $pipe;
 $SIG{INT} = sub { $pipe = 0; $exit = 1 };
 $SIG{PIPE} = sub { $pipe = 1 };
 
-my $connect_failure = "none";
 my $big_on_connect;
 my $debug = 0;
 
 while (my $arg = shift) {
-    if ($arg =~ /.*connect.*=(\w+)/) {
+    if ($arg =~ /.*connect[^_]*=(\w+)/) {
         $connect_failure = $1;
+    } elsif ($arg =~ /.*connect\w*_timeout=([.\d]+)/a) {
+        $connect_timeout = $1;
+    } elsif ($arg =~ /.*read_timeout=([.\d]+)/a) {
+        die "Not supported" unless defined($timeout_available);
+        $read_timeout = $1;
     } elsif ($arg =~ /.*server=([\w.]+)((?<=:)\d+)?/a) {
         # BUG: no support for IPv6 address
         $hostname = $1;
@@ -55,6 +64,8 @@ while (my $arg = shift) {
         with optional support for timeouts and other goodies.
 
         --server=<host[:port]>    defaults to $hostname:$port
+        --connect_timeout=<value> defaults to $connect_timeout seconds
+        --read_timeout=<value>    defaults to $read_timeout seconds
         --connect=close|reset     "ping" at connect, send FIN/RST if timeout
         --big                     "big" at connect
         --debug                   enable debugging messages
@@ -69,7 +80,7 @@ my $socket = new IO::Socket::INET (
     PeerHost => $hostname,
     PeerPort => $port,
     Proto => "tcp",
-    Timeout => 5,
+    Timeout => $connect_timeout,
 ) or die "$hostname:$port $@\n";
 
 my $close_on_exit = 1;
@@ -105,7 +116,7 @@ if ($connect_failure =~ /close|reset/ || defined($big_on_connect)) {
     } elsif ($n == PIPE_BUF) {
         if ($connect_failure =~ /close|reset/) {
             IO::Socket::Timeout->enable_timeouts_on($socket);
-            $socket->read_timeout(50);
+            $socket->read_timeout($read_timeout);
             $has_timeout = 1;
         }
         $socket->recv($buffer, PIPE_BUF);
