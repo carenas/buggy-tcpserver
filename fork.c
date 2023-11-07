@@ -3,6 +3,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -14,10 +15,37 @@
 #include <assert.h>
 #include <stdio.h>
 
+static int set_cork_on_close;
+
 /* SMELL: should better use stderr for debug/error messages, but keeping
 	them all together makes reporting easier without timestamps */
 /* TODO: timestamp messages to help correlate events with client */
 static int debug;
+
+/* TODO: should warn if option is not available, but not here */
+/* BUG: for TCP_CORK to be effective, you need to cork/uncork the socket
+	and do it in less than 200ms, hence why leaving the close() to
+	exit() is a bad idea, even if sharing FDs was sound */
+static int configure_cork(int socket)
+{
+	int r = 0;
+	int v = 1;
+
+/* BUG: TCP_CORK is not standarized, TCP_NOPUSH is not a full equivalent */
+#ifdef TCP_CORK
+	int option = TCP_CORK;
+#elif defined(TCP_NOPUSH)
+	int option = TCP_NOPUSH;
+#else
+	int option = 0;
+#endif
+
+	if (set_cork_on_close && option)
+		r = setsockopt(socket, IPPROTO_TCP, option,
+					(const void *)&v, sizeof(v));
+
+	return r;
+}
 
 static void regress_sighandler(int signo)
 {
@@ -137,14 +165,59 @@ static int handle_connection(int pid, int client_socket, int client_id)
 			sleep((i < 0) ? 0 : (unsigned)i);
 			client_exit = 1;
 		} else if (!memcmp(buffer, "busy", 4)) {
-			/* SMELL: could be abused by clients, atoi is unsafe */
-			int i = atoi(buffer + 4);
+			/* SMELL: parameter only restricted by max command
+				length and will be silently truncated */
+			unsigned u = 0;
 
-			sleep((i < 0) ? 0 : (unsigned)i);
+			if (n > 4) {
+				char *endptr;
+				long l;
+
+				errno = 0;
+				l = strtol(buffer + 4, &endptr, 10);
+
+				/* SMELL: command length prevents overflow */
+				if (l == LONG_MAX || errno == ERANGE) {
+					if (debug)
+						printf("%d: DEBUG: strtol %ld %s\n",
+							pid, l, strerror(errno));
+					errno = 0;
+					l = 0;
+				} else if ((l < 0 || l > INT_MAX) && debug)
+					printf("%d: DEBUG: strtol %ld mangled\n",
+							pid, l);
+
+				/* TODO: should use a more reasonable range */
+				u = (l < 0 || l > INT_MAX) ? 0 : (unsigned)l;
+
+				switch (*endptr) {
+				case 'c':
+					/* BUG: data loss if linger */
+					client_exit = 1;
+					r = configure_cork(client_socket);
+					if (r) {
+						if (debug)
+							printf("%d: DEBUG: TCP_CORK %s\n",
+								pid, strerror(errno));
+						errno = 0;
+					}
+					break;
+				case '\0':
+					break;
+				default:
+					/* SMELL: EINVAL not portable */
+					if (debug && errno)
+						printf("%d: DEBUG: strtol %s\n",
+							pid, strerror(errno));
+					errno = 0;
+				}
+			}
+
+			sleep(u);
 			/* TODO: should handle partial/short write */
 			/* BUG: sprintf error not handled */
 			n = write(client_socket, buffer,
-					(size_t)sprintf(buffer, "%d\n", i));
+					(size_t)sprintf(buffer, "%u\n", u));
 			if (n < 0) {
 				printf("%d: write() pipe? %zd %s\n",
 					pid, n, strerror(errno));
@@ -228,10 +301,11 @@ static int usage(const char *process_name)
 	printf("an how much extra slowdown to apply.\n");
 	printf("\n");
 	printf("\t-D, --debug\t\tenable debugging messages\n");
+	printf("\t    --cork\t\tbundle FIN with data at close\n");
 	printf("\t-L, --leak\t\tleak filehandles to workers (0, 0x3)\n");
 	printf("\t    --linger\t\tnumber of seconds to linger (0)\n");
-	printf("\t-s, --slow\t\tadditional <slowdown> in seconds (0)\n");
 	printf("\t-m, --max-workers\thow many fast workers allowed (3000)\n");
+	printf("\t-s, --slow\t\tadditional <slowdown> in seconds (0)\n");
 	printf("\t-h, --help\t\tthis help\n");
 	return 0;
 }
@@ -257,6 +331,7 @@ int main(int argc, char *argv[])
 		{"max-workers", required_argument, NULL, 'm'},
 		{"listen-queue", required_argument, NULL, 'l'},
 		{"linger", required_argument, NULL, 1},
+		{"cork", no_argument, NULL, 2},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -264,6 +339,9 @@ int main(int argc, char *argv[])
 		switch(r) {
 			case 1: /* linger */
 				lin.l_linger = atoi(optarg);
+				break;
+			case 2: /* cork */
+				set_cork_on_close = 1;
 				break;
 			case 'D':
 				debug = 1;
@@ -313,7 +391,8 @@ int main(int argc, char *argv[])
 			printf("FATAL: setsockopt(SO_LINGER) %s\n",
 						strerror(errno));
 			return 1;
-		}
+		} else if (set_cork_on_close)
+			printf("WARN: both SO_LINGER and TCP_CORK enabled\n");
 	} else if (debug)
 		printf("DEBUG: SO_LINGER not enabled %d\n", lin.l_linger);
 
@@ -397,7 +476,7 @@ int main(int argc, char *argv[])
 				errno = 0;
 			}
 
-			/* TODOL client_id should support multiple sources */
+			/* TODO: client_id should support multiple sources */
 			r = handle_connection(my_pid, client_socket,
 						ntohs(client_addr.sin_port));
 
