@@ -2,6 +2,9 @@
 
 # SPDX-License-Identifier: BSD-2-Clause
 
+use strict;
+use warnings;
+
 my $hostname = "127.0.0.1";
 my $port = 7777;
 my $connect_timeout = 5;
@@ -10,11 +13,9 @@ my $connect_failure = "none";
 
 # Most variables below are not configuration variables
 
-use strict;
-use warnings;
-
 use POSIX;
-use Errno qw(ETIMEDOUT);
+use Socket qw(IPPROTO_TCP);
+use Errno;
 use IO::Socket::INET;
 
 my $timeout_available = eval {
@@ -98,6 +99,7 @@ my $shutdown = -1;
 my $init = "";
 my $buffer;
 my $n;
+my $corked_socket;
 my $id = $socket->sockport();
 
 if ($connect_failure =~ /close|reset/ || defined($big_on_connect)) {
@@ -178,6 +180,11 @@ while (<STDIN>) {
         $socket->setsockopt(SOL_SOCKET, SO_LINGER, pack("II", 1, $linger_timeout));
         next;
     }
+    if (/cork/) {
+        $corked_socket = $socket->setsockopt(IPPROTO_TCP, Socket::TCP_CORK, 1);
+        print "UNAVAIL\n" if !$corked_socket && $debug;
+        next;
+    }
     if (/ti?me?out(\s*[\d.]*)?/a) {
         my $v = ltrim($1);
         if ($timeout_available) {
@@ -201,6 +208,10 @@ while (<STDIN>) {
     # BUG: might need to use sysread and cousins for reliable timeouts
     $socket->send($_);
     $socket->shutdown($shutdown) if $shutdown >= 0 && $early_passive && !$short_pipe;
+    if ($corked_socket) {
+        $socket->setsockopt(IPPROTO_TCP, Socket::TCP_CORK, 0);
+        undef $corked_socket;
+    }
     $socket->recv($buffer, $size); # BUG: timeout might go undetected
     if (!length($buffer)) {
         print "pipe!\n" if $pipe;
@@ -220,6 +231,7 @@ while (<STDIN>) {
         chomp $buffer;
         print "$buffer\n";
     }
+    last if $early_passive && $shutdown >= 1;
 }
 $socket->shutdown($shutdown) if $shutdown >= 0 && !$early_passive;
 $socket->close() if $close_on_exit;
