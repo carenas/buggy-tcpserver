@@ -205,6 +205,10 @@ while (<STDIN>) {
     $expect_empty_response = /close/;
     last if $exit || /bye|die/;
 
+    if (/busy\s*(?:\d+)?(\D)/a) {
+        $exit = $1 eq "c";
+    }
+
     # BUG: might need to use sysread and cousins for reliable timeouts
     $socket->send($_);
     $socket->shutdown($shutdown) if $shutdown >= 0 && $early_passive && !$short_pipe;
@@ -231,7 +235,7 @@ while (<STDIN>) {
         chomp $buffer;
         print "$buffer\n";
     }
-    last if $early_passive && $shutdown >= 1;
+    last if $exit || ($early_passive && $shutdown >= 1);
 }
 $socket->shutdown($shutdown) if $shutdown >= 0 && !$early_passive;
 $socket->close() if $close_on_exit;
