@@ -7,4 +7,4 @@ check: fork
 	$(MAKE) -C t
 
 clean:
-	$(RM) fork *.o
+	rm -f fork *.o

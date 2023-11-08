@@ -9,13 +9,13 @@ start_fork() {
 	echo $!
 }
 
-run() {
+run_once() {
 	program=$1
 	shift
 	if [ -n "$program" ] && [ -x "../$program" ]; then
 		case "$program" in
 			fork)
-				PID=$(start_fork -D)
+				PID=$(start_fork "$@")
 				sleep 1
 				kill -INT "$PID"
 				sleep 1
@@ -25,8 +25,8 @@ run() {
 	fi
 }
 
-run fork -D
+run_once fork -D
 grep "DEBUG: SO_LINGER not enabled 0" log && exit 1
-run fork -D --linger=-1
+run_once fork -D --linger=-1
 grep "DEBUG: SO_LINGER not enabled -1" log
-rm -f log out err
+rm -f log out err exp

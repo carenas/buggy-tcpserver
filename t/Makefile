@@ -4,4 +4,4 @@ all: ../fork
 	./regress
 
 clean:
-	$(RM) err log out
+	rm -f err exp log out
