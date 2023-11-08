@@ -26,6 +26,13 @@ static void regress_sighandler(int signo)
 	raise(signo);
 }
 
+static const char *lf(unsigned length) {
+	const char *line_end[] = { "", "\n", "\r\n" };
+
+	assert(length <= 2);
+	return line_end[length];
+}
+
 static int handle_connection(int pid, int client_socket, int client_id)
 {
 	int r;
@@ -35,7 +42,7 @@ static int handle_connection(int pid, int client_socket, int client_id)
 
 	printf("%d: connect %d\n", pid, client_id);
 	do {
-		int keep_lf = 0; /* SMELL: only supported by a few commands */
+		unsigned keep_lf = 0; /* SMELL: missing command support */
 		ssize_t n = read(client_socket, buffer, 8);
 
 		if (debug)
@@ -85,9 +92,9 @@ static int handle_connection(int pid, int client_socket, int client_id)
 			/* SMELL: could break with partial data requests */
 			assert(n > 2);
 			if (buffer[n - 2] == '\r')
-				keep_lf = 2;
+				keep_lf = 2u;
 			else if (buffer[n - 1] == '\n')
-				keep_lf = 1;
+				keep_lf = 1u;
 			else
 				keep_lf = 0;
 			buffer[n - keep_lf] = '\0';
@@ -158,7 +165,15 @@ static int handle_connection(int pid, int client_socket, int client_id)
 				parent */
 			int ipc[2];
 			pid_t child_pid;
+			unsigned busy = 0;
 
+			/* BUG: could be abused by client, unsafe */
+			if (n > 4) {
+				int i = atoi(buffer + 4);
+				busy = (i < 0) ? 0 : (unsigned)i;
+			}
+
+			/* BUG: no report to peer on failure */
 			if (pipe(ipc) < 0) {
 				printf("%d: pipe! %s\n", pid, strerror(errno));
 				errno = 0;
@@ -167,39 +182,57 @@ static int handle_connection(int pid, int client_socket, int client_id)
 
 			child_pid = fork();
 			if ((int)child_pid == -1) {
-				/* BUG: no report to peer on failure */
 				printf("%d: fork! %s\n", pid, strerror(errno));
 				errno = 0;
 				continue;
 			} else if (!child_pid) {
 				pid_t my_pid = getpid();
-				int s;
+				int s, t;
 
 				if (debug)
 					start = clock();
-				close(ipc[0]);
-				printf("%d: start\n", (int)my_pid);
-				n = write(client_socket, "ok\n", 3);
-				s = (n != 3);
 
-				if (s) {
-					printf("%d: write(3) %s\n",
+				close(ipc[0]);
+
+				printf("%d: start\n", (int)my_pid);
+				s = sprintf(buffer, "%d%s",
+					(int)my_pid, lf(keep_lf));
+				if (s < 0) {
+					printf("%d: sprintf %s\n",
 						(int)my_pid, strerror(errno));
 					errno = 0;
+					s = 0;
 				}
-				if (write(ipc[1], &s, sizeof(s)) <= 0)
+
+				sleep(busy);
+				n = write(client_socket, buffer, (size_t)s);
+				t = (n != s);
+
+				if (t) {
+					printf("%d: write(%d) %zd %s\n",
+						(int)my_pid, s, n,
+						strerror(errno));
+					errno = 0;
+				}
+
+				/* BUG: a failure will block the parent */
+				if (write(ipc[1], &t, sizeof(t)) <= 0)
 					printf("%d: pipe %s\n", (int)my_pid,
 						strerror(errno));
 
 				if (debug) {
 					int i;
+					printf("%d: DEBUG: last write %zd\n",
+						(int)my_pid, n);
 					end = clock();
 					assert(start <= end && (end - start) <= INT_MAX);
 					i = (int)(end - start);
 					printf("%d: DEBUG: stop %d\n",
 						(int)my_pid, i);
 				}
-				exit(s);
+
+				/* BUG: this status is lost */
+				exit(t);
 			} else {
 				int status;
 
