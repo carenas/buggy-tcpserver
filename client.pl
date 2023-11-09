@@ -2,6 +2,10 @@
 
 # SPDX-License-Identifier: BSD-2-Clause
 
+use strict;
+use warnings;
+use locale ':not_characters';
+
 my $hostname = "127.0.0.1";
 my $port = 7777;
 my $connect_timeout = 5;
@@ -51,12 +55,12 @@ my $debug = 0;
 while (my $arg = shift) {
     if ($arg =~ /.*connect[^_]*=(\w+)/) {
         $connect_failure = $1;
-    } elsif ($arg =~ /.*connect\w*_timeout=([.\d]+)/a) {
+    } elsif ($arg =~ /.*connect\w*_timeout=([.\d]+)/) {
         $connect_timeout = $1;
-    } elsif ($arg =~ /.*read_timeout=([.\d]+)/a) {
+    } elsif ($arg =~ /.*read_timeout=([.\d]+)/) {
         die "Not supported" unless defined($timeout_available);
         $read_timeout = $1;
-    } elsif ($arg =~ /.*server=([\w.]+)((?<=:)\d+)?/a) {
+    } elsif ($arg =~ /.*server=([\w.]+)((?<=:)\d+)?/) {
         # BUG: no support for IPv6 address
         $hostname = $1;
         $port = $2 if defined($2);
@@ -168,17 +172,17 @@ while (<STDIN>) {
         $short_pipe = 1;
         next;
     }
-    if (/shut(?:down)?\s*(\d)/a) {
+    if (/shut(?:down)?\s*(\d)/) {
         $shutdown = $1;
         print "INVALID\n" if $shutdown > 2 && $debug;
         next;
     }
-    if (/linge?r\s*(\d+)/a) {
+    if (/linge?r\s*(\d+)/) {
         my $linger_timeout = $1;
         $socket->setsockopt(SOL_SOCKET, SO_LINGER, pack("II", 1, $linger_timeout));
         next;
     }
-    if (/ti?me?out(\s*[\d.]*)?/a) {
+    if (/ti?me?out(\s*[\d.]*)?/) {
         my $v = ltrim($1);
         if ($timeout_available) {
             if (!$has_timeout) {
