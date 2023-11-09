@@ -24,6 +24,15 @@ my $timeout_available = eval {
     $read_timeout;
 };
 
+# TODO: this detection should be done at "build" time
+# BUG: recent enough [Open]Solaris also support TCP_CORK
+my $buggy_cork;
+if ($^O eq "linux") {
+    $buggy_cork = Socket::TCP_CORK;
+} elsif ($^O =~ /bsd|darwin/) {
+    $buggy_cork = Socket::TCP_NOPUSH;
+}
+
 sub ltrim {
     my $s = shift;
     $s =~ s/^[^\S\n]+//gm;
@@ -181,7 +190,7 @@ while (<STDIN>) {
         next;
     }
     if (/cork/) {
-        $corked_socket = $socket->setsockopt(IPPROTO_TCP, Socket::TCP_CORK, 1);
+        $corked_socket = $socket->setsockopt(IPPROTO_TCP, $buggy_cork, 1);
         print "UNAVAIL\n" if !$corked_socket && $debug;
         next;
     }
@@ -213,7 +222,7 @@ while (<STDIN>) {
     $socket->send($_);
     $socket->shutdown($shutdown) if $shutdown >= 0 && $early_passive && !$short_pipe;
     if ($corked_socket) {
-        $socket->setsockopt(IPPROTO_TCP, Socket::TCP_CORK, 0);
+        $socket->setsockopt(IPPROTO_TCP, $buggy_cork, 0);
         undef $corked_socket;
     }
     $socket->recv($buffer, $size); # BUG: timeout might go undetected
