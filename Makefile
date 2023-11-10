@@ -7,5 +7,5 @@ check: fork
 	@cd t && $(MAKE)
 
 clean:
-	@cd t && make clean
+	@cd t && $(MAKE) clean
 	rm -f fork *.o

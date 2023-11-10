@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: BSD-2-Clause
+.PHONY: all check clean
 
-all: ../fork
+check: ../fork
 	./regress
+
+all: check
 
 clean:
 	rm -f err exp log out

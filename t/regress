@@ -15,7 +15,7 @@ run_once() {
 	if [ -n "$program" ] && [ -x "../$program" ]; then
 		case "$program" in
 			fork)
-				PID=$(start_fork "$@")
+				PID=`start_fork "$@"`
 				sleep 1
 				kill -INT "$PID"
 				sleep 1
