@@ -4,7 +4,8 @@
 all: fork
 
 check: fork
-	$(MAKE) -C t
+	@cd t && $(MAKE)
 
 clean:
+	@cd t && make clean
 	rm -f fork *.o

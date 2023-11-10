@@ -14,9 +14,6 @@ my $connect_failure = "none";
 
 # Most variables below are not configuration variables
 
-use strict;
-use warnings;
-
 use POSIX;
 use Errno qw(ETIMEDOUT);
 use IO::Socket::INET;
